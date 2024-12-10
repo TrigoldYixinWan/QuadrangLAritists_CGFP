@@ -1,0 +1,91 @@
+{
+  "name": "root",
+  "globalData": {
+    "ambientCoeff": 0.5,
+    "diffuseCoeff": 0.5,
+    "specularCoeff": 0.5,
+    "transparentCoeff": 0
+  },
+  "cameraData": {
+    "position": [-1.83627, 1.89243, -3.66398],
+    "up": [-0.150264, -0.908996, -0.388777],
+    "heightAngle": 64.0,
+    "look": [0.495877, -0.409496, 0.76578]
+  },
+  "groups": [
+    {
+      "lights": [
+        {
+          "type": "directional",
+          "color": [0.5, 0.5, 0.5],
+          "direction": [-10.0, -10.0, -10.0]
+        }
+      ]
+    },
+    {
+      "lights": [
+        {
+          "type": "directional",
+          "color": [0.8, 0.4, 0.8],
+          "direction": [2.0, 2.0, -2.0]
+        }
+      ]
+    },
+    {
+      "lights": [
+        {
+          "type": "directional",
+          "color": [0.8, 0.4, 0.8],
+          "direction": [-4.0, -4.0, -4.0]
+        }
+      ]
+    },
+    {
+      "lights": [
+        {
+          "type": "directional",
+          "color": [0.8, 0.4, 0.8],
+          "direction": [6.0, 6.0, 6.0]
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "matrix": [
+            [1.0, 0.0, 0.0, 0.0],   
+            [0.0, 2.0, 0.0, 0.0], 
+            [0.0, 0.0, 1.0, 0.0],  
+            [0.0, 0.0, 0.0, 1.0]    
+          ],
+          "primitives": [
+            {
+              "type": "cylinder",
+              "diffuse": [0.6, 0.6, 0.6],
+              "specular": [0.3, 0.3, 0.3],
+              "shininess": 10.0
+            }
+          ],
+          "children": [
+            {
+              "matrix": [
+                [1.2, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.2, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+              ],
+              "primitives": [
+                {
+                  "type": "cone",
+                  "diffuse": [0.8, 0.2, 0.2],
+                  "specular": [0.3, 0.3, 0.3],
+                  "shininess": 15.0
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
