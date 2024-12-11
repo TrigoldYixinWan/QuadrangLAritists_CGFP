@@ -228,7 +228,7 @@ void Realtime::paintGL() {
             // If it's a circle approximated by a triangle fan, draw with GL_TRIANGLE_FAN
             // The first vertex is the center, and then the other vertices form the fan
             // For a circle: num vertices = NUM_SEGMENTS + 1 (including center)
-            glDrawArrays(GL_TRIANGLE_FAN, 0, 24 + 1);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 27);
         } else {
             // Box is 6 vertices forming 2 triangles
             glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -236,6 +236,8 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
+    glUniform1i(planetTypeLoc, 99);
+    renderBrushStrokes();
 
     glUseProgram(0);
 
@@ -293,37 +295,6 @@ void Realtime::settingsChanged() {
 
 
 
-void Realtime::paintTexture(GLuint texture, int filterType)
-{
-    glUseProgram(m_textureShader);
-
-    // Set the filter type uniform
-    GLint filterTypeLoc = glGetUniformLocation(m_textureShader, "u_filterType");
-    glUniform1i(filterTypeLoc, filterType);
-
-    // Set the texel size uniform
-    GLint texelSizeLoc = glGetUniformLocation(m_textureShader, "u_texelSize");
-    glUniform2f(texelSizeLoc, 1.0f / m_fbo_width, 1.0f / m_fbo_height);
-
-    // Bind the fullscreen quad VAO
-    glBindVertexArray(m_fullscreen_vao);
-
-    // Bind the texture to texture unit 0
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    // Set the texture uniform to use texture unit 0
-    GLint textureUniformLocation = glGetUniformLocation(m_textureShader, "u_texture");
-    glUniform1i(textureUniformLocation, 0);
-
-    // Draw the quad
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    // Unbind
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindVertexArray(0);
-    glUseProgram(0);
-}
 
 void Realtime::createPhysicsObject(float x, float y) {
     // Make the OpenGL context current before creating VAOs and VBOs
@@ -338,6 +309,7 @@ void Realtime::createPhysicsObject(float x, float y) {
     obj.body = body;
     obj.shape = m_currentShape;
     obj.color = m_currentColor;
+    obj.canBecomeStatic = m_autoStaticMode; // Important line
     float halfSize = m_currentSize;
 
     if (obj.shape == ObjectShape::BOX) {
@@ -394,7 +366,7 @@ void Realtime::createPhysicsObject(float x, float y) {
         fixtureDef.friction = 0.3f;
         body->CreateFixture(&fixtureDef);
 
-        const int NUM_SEGMENTS = 24;
+        const int NUM_SEGMENTS = 25;
         std::vector<GLfloat> circleVerts;
         circleVerts.push_back(0.0f);
         circleVerts.push_back(0.0f);
@@ -460,10 +432,10 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
         // Initialize and activate the solar system scene
         initializeSolarSystem();
         break;
-    case Qt::Key_Plus:
+    case Qt::Key_E:
         m_currentSize += 0.1f;
         break;
-    case Qt::Key_Minus:
+    case Qt::Key_Q:
         m_currentSize = std::max(0.1f, m_currentSize - 0.1f);
         break;
     case Qt::Key_R:
@@ -481,11 +453,58 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     case Qt::Key_W:
         m_currentShape = ObjectShape::WATER;
         break;
+    case Qt::Key_L:
+        m_brushMode = !m_brushMode;
+
+        break;
+    case Qt::Key_0:
+        resetWorld();
+        break;
+
     default:
         break;
     }
 }
+void Realtime::resetWorld() {
+    // Delete all Box2D bodies and reset vectors
+    for (auto& obj : m_objects) {
+        m_world->DestroyBody(obj.body);
+    }
+    m_objects.clear();
 
+    // Clear all particles
+    if (m_particleSystem) {
+        m_particleSystem->DestroyParticle(0,false);  // false = don't call destructor, 0 = destroy all particles
+    }
+
+    // Reset brush strokes
+    if (m_currentBrush) {
+        m_world->DestroyBody(m_currentBrush);
+        m_currentBrush = nullptr;
+    }
+    m_brushPoints.clear();
+
+    // Reset gravity and modes
+    m_world->SetGravity(b2Vec2(0.0f, -9.8f));
+    m_hasGravityCenter = false;
+    m_orbitMode = false;
+    m_brushMode = false;
+    setCursor(Qt::ArrowCursor);
+
+    // Recreate ground
+    if (m_groundBody) {
+        m_world->DestroyBody(m_groundBody);
+    }
+    b2BodyDef groundDef;
+    groundDef.position.Set(0.0f, -m_worldHeight / 2.0f - 1.0f);
+    m_groundBody = m_world->CreateBody(&groundDef);
+
+    b2PolygonShape groundBox;
+    groundBox.SetAsBox(m_worldWidth, 1.0f);
+    m_groundBody->CreateFixture(&groundBox, 0.0f);
+
+    update();
+}
 void Realtime::keyReleaseEvent(QKeyEvent *event) {
     m_keyMap[Qt::Key(event->key())] = false;
 }
@@ -502,7 +521,19 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             m_gravityCenter = glm::vec2(worldX, worldY);
             m_hasGravityCenter = true;
             m_selectingGravityCenter = false;
-        } 
+        } else if(m_brushMode){
+            float x = ((float)event->pos().x() / width() - 0.5f) * m_worldWidth;
+            float y = (0.5f - (float)event->pos().y() / height()) * m_worldHeight;
+            m_mouseup = false;
+            // Start new brush stroke
+
+            m_brushPoints.push_back(b2Vec2(x, y));
+
+            // Create static body for the brush stroke
+            b2BodyDef bodyDef;
+            bodyDef.type = b2_staticBody;
+            m_currentBrush = m_world->CreateBody(&bodyDef);
+        }
 
         else if (m_selectingExplosionCenter) {
             m_explosionCenter = glm::vec2(worldX, worldY);
@@ -543,9 +574,12 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
 }
 
 void Realtime::mouseReleaseEvent(QMouseEvent *event) {
-    if (!event->buttons().testFlag(Qt::LeftButton)) {
-        m_mouseDown = false;
-    }
+    if (!m_brushMode) return;
+
+    // Finish brush stroke
+    m_currentBrush = nullptr;
+    m_mouseup = true;
+
 }
 
 void Realtime::timerEvent(QTimerEvent *event) {
@@ -647,101 +681,39 @@ void Realtime::timerEvent(QTimerEvent *event) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    if (m_mouseDown) {
-        float sensitivity = 0.005f; // Adjust sensitivity as needed
+    if (!m_brushMode || !m_currentBrush) return;
 
-        int posX = event->position().x();
-        int posY = event->position().y();
+    // Convert coordinates
+    float x = ((float)event->pos().x() / width() - 0.5f) * m_worldWidth;
+    float y = (0.5f - (float)event->pos().y() / height()) * m_worldHeight;
 
-        float deltaX = posX - m_prev_mouse_pos.x;
-        float deltaY = posY - m_prev_mouse_pos.y;
-        m_prev_mouse_pos = glm::vec2(posX, posY);
-
-        // Convert pixel movement to angles
-        float angleX = -deltaX * sensitivity;
-        float angleY = deltaY * sensitivity;
-
-        // Rotate around world up vector
-        rotateAroundWorldUp(angleX);
-
-        // Rotate around camera's right vector
-        rotateAroundCameraRight(-angleY); // Negative to invert Y-axis if desired
-
-        // Update the view matrix
-        m_camera.updateViewMatrix();
-
-        update(); // Request a repaint
+    // Add point if it's far enough from last point
+    b2Vec2 newPoint(x, y);
+    if (m_brushPoints.size() > 0) {
+        b2Vec2 lastPoint = m_brushPoints.back();
+        float dist = b2Distance(newPoint, lastPoint);
+        if (dist < m_brushThickness) return;  // Skip if points too close
     }
+
+    m_brushPoints.push_back(newPoint);
+
+    // Create edge shape between last two points
+    if (m_brushPoints.size() >= 2 ) {
+        size_t last = m_brushPoints.size() - 1;
+
+        b2EdgeShape edge;
+        edge.Set(m_brushPoints[last-1], m_brushPoints[last]);
+
+        b2FixtureDef fixtureDef;
+        fixtureDef.shape = &edge;
+        fixtureDef.density = 0.0f;  // Static body
+        fixtureDef.friction = 0.3f;
+
+        m_currentBrush->CreateFixture(&fixtureDef);
+    }
+
+    update();
 }
-
-void Realtime::rotateAroundWorldUp(float angle) {
-    // Create rotation matrix around world up vector (0, 1, 0)
-    glm::mat4 rotationMatrix = createRotationMatrix(glm::vec3(0.0f, 1.0f, 0.0f), angle);
-
-    // Rotate the look vector
-    m_camera.look = glm::vec3(rotationMatrix * glm::vec4(m_camera.look, 0.0f));
-
-    // Re-normalize the look vector
-    m_camera.look = glm::normalize(m_camera.look);
-
-    // Update the up vector
-    m_camera.up = glm::vec3(rotationMatrix * glm::vec4(m_camera.up, 0.0f));
-    m_camera.up = glm::normalize(m_camera.up);
-}
-
-void Realtime::rotateAroundCameraRight(float angle) {
-    // Calculate the right vector
-    glm::vec3 right = glm::normalize(glm::cross(m_camera.look, m_camera.up));
-
-    // Create rotation matrix around the right vector
-    glm::mat4 rotationMatrix = createRotationMatrix(right, angle);
-
-    // Rotate the look vector
-    m_camera.look = glm::vec3(rotationMatrix * glm::vec4(m_camera.look, 0.0f));
-    m_camera.look = glm::normalize(m_camera.look);
-
-    // Rotate the up vector
-    m_camera.up = glm::vec3(rotationMatrix * glm::vec4(m_camera.up, 0.0f));
-    m_camera.up = glm::normalize(m_camera.up);
-}
-
-glm::mat4 Realtime::createRotationMatrix(const glm::vec3 &axis, float angle) {
-    // Normalize the axis
-    glm::vec3 u = glm::normalize(axis);
-
-    float cosTheta = cos(angle);
-    float sinTheta = sin(angle);
-    float oneMinusCosTheta = 1.0f - cosTheta;
-
-    // Components for the rotation matrix
-    float ux = u.x;
-    float uy = u.y;
-    float uz = u.z;
-
-    // Construct the rotation matrix manually
-    glm::mat4 rotationMatrix = glm::mat4(
-        cosTheta + ux * ux * oneMinusCosTheta,
-        uy * ux * oneMinusCosTheta + uz * sinTheta,
-        uz * ux * oneMinusCosTheta - uy * sinTheta,
-        0.0f,
-
-        ux * uy * oneMinusCosTheta - uz * sinTheta,
-        cosTheta + uy * uy * oneMinusCosTheta,
-        uz * uy * oneMinusCosTheta + ux * sinTheta,
-        0.0f,
-
-        ux * uz * oneMinusCosTheta + uy * sinTheta,
-        uy * uz * oneMinusCosTheta - ux * sinTheta,
-        cosTheta + uz * uz * oneMinusCosTheta,
-        0.0f,
-
-        0.0f, 0.0f, 0.0f, 1.0f
-        );
-
-    return rotationMatrix;
-}
-
-
 
 
 // DO NOT EDIT
@@ -959,5 +931,54 @@ void Realtime::initializeSolarSystem() {
     }
 }
 
+void Realtime::renderBrushStrokes() {
+    glUseProgram(m_shaderProgram2D);
+
+    glm::mat4 proj = glm::ortho(-m_worldWidth/2.0f, m_worldWidth/2.0f,
+                                -m_worldHeight/2.0f, m_worldHeight/2.0f,
+                                -1.0f, 1.0f);
+    GLint projLoc = glGetUniformLocation(m_shaderProgram2D, "u_Projection");
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
+
+    // Render the current brush stroke
+    if (m_brushPoints.size() >= 2) {
+        glLineWidth(5.0f);  // Make lines thicker and visible
+
+        GLint colorLoc = glGetUniformLocation(m_shaderProgram2D, "u_Color");
+        GLint modelLoc = glGetUniformLocation(m_shaderProgram2D, "u_Model");
+
+        // Set color (e.g., white)
+        glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
+
+        // Identity model matrix
+        glm::mat4 model = glm::mat4(1.0f);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+        std::vector<float> vertices;
+        for (const auto& point : m_brushPoints) {
+            vertices.push_back(point.x);
+            vertices.push_back(point.y);
+        }
+
+        GLuint vbo, vao;
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float),
+                     vertices.data(), GL_STATIC_DRAW);
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glEnableVertexAttribArray(0);
+
+        glDrawArrays(GL_LINE_STRIP, 0, vertices.size()/2);
+
+        glDeleteBuffers(1, &vbo);
+        glDeleteVertexArrays(1, &vao);
+    }
+
+    glUseProgram(0);
+}
 
 

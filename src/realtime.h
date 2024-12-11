@@ -32,7 +32,7 @@ struct PhysObject {
     bool isCircle;
     glm::vec3 color; // Store the object color here
     ObjectShape shape;
-
+    bool canBecomeStatic = false;
     float orbitAngularSpeed = 0.0f;
 };
 
@@ -92,10 +92,10 @@ private:
     void rotateAroundCameraRight(float angle);
     glm::mat4 createRotationMatrix(const glm::vec3 &axis, float angle);
 
-    void initializeFullscreenQuad();
+
     void paintTexture(GLuint texture, int filterType);
-    void renderScene();
-    void makeFBO();
+
+    bool m_autoStaticMode = false;
 
     // Physics-related methods
     void stepPhysics(float dt);
@@ -186,5 +186,15 @@ private:
     GLuint m_particleVAO = 0;
     GLuint m_particleVBO = 0;
     bool m_particleVAOInitialized = false;
+    std::vector<b2Vec2> m_drawPoints;
+
+    bool m_brushMode = false;
+    std::vector<b2Vec2> m_brushPoints;
+    b2Body* m_currentBrush = nullptr;
+    float m_brushThickness = 0.1f;
+    void renderBrushStrokes();
+    void resetWorld();
+
+    bool m_mouseup = true;
 };
 
