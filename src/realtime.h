@@ -150,8 +150,13 @@ private:
 
 private:
     bool m_selectingGravityCenter = false;
+    bool m_selectingExplosionCenter = false;
     bool m_hasGravityCenter = false;
+    bool m_explosionMode = false;
+    glm::vec2 m_explosionCenter = glm::vec2(0.0f, 0.0f);
     glm::vec2 m_gravityCenter = glm::vec2(0.0f, 0.0f);
     float m_gravityStrength = 10.0f; // Adjust as needed
+
+    void resetGravityCenter();
 };
 

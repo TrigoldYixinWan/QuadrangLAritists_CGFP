@@ -430,6 +430,12 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     case Qt::Key_3:
         // Enter mode to select a new gravity center on next left click
         m_selectingGravityCenter = true;
+        m_selectingExplosionCenter = false;
+        break;
+    case Qt::Key_4:
+        m_selectingExplosionCenter = true;
+        m_selectingGravityCenter = false;
+        std::cout << "Explosion mode activated. Click on the screen to apply outward force." << std::endl;
         break;
     case Qt::Key_Plus:
         m_currentSize += 0.1f;
@@ -445,6 +451,9 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
         break;
     case Qt::Key_B:
         m_currentColor = glm::vec3(0.0f, 0.0f, 1.0f); // Blue
+        break;
+    case Qt::Key_Escape:
+        resetGravityCenter();
         break;
     default:
         break;
@@ -467,7 +476,16 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             m_gravityCenter = glm::vec2(worldX, worldY);
             m_hasGravityCenter = true;
             m_selectingGravityCenter = false;
-        } else {
+        } 
+
+        else if (m_selectingExplosionCenter) {
+            m_explosionCenter = glm::vec2(worldX, worldY);
+            m_explosionMode = true;
+            m_selectingExplosionCenter = false;
+            m_hasGravityCenter = false;
+        }
+        
+        else {
             // Create a new physics object
             createPhysicsObject(worldX, worldY);
         }
@@ -509,6 +527,35 @@ void Realtime::timerEvent(QTimerEvent *event) {
             }
         }
     }
+
+    if (m_explosionMode) {
+        // Apply outward force from the click position
+        // glm::vec2 explosionCenter(worldX, worldY);
+        float explosionStrength = 200.0f; // Adjust the strength of the explosion
+
+        for (auto &obj : m_objects) {
+            b2Body* body = obj.body;
+            if (body->GetType() == b2_dynamicBody) {
+                b2Vec2 bodyPos = body->GetPosition();
+                glm::vec2 direction = glm::vec2(bodyPos.x - m_explosionCenter.x, bodyPos.y - m_explosionCenter.y);
+
+                float distanceSq = direction.x * direction.x + direction.y * direction.y;
+
+                // Avoid division by zero and apply force only within a certain range
+                if (distanceSq > 0.0001f && distanceSq < 10.0f) {
+                    float distance = sqrt(distanceSq);
+                    glm::vec2 normalizedDirection = direction / distance;
+
+                    // Scale force by explosion strength and inverse distance
+                    glm::vec2 force = normalizedDirection * (explosionStrength / distance);
+
+                    body->ApplyForceToCenter(b2Vec2(force.x, force.y), true);
+                }
+            }
+        }
+        m_explosionMode = false;
+    }
+
 
     update(); // request a repaint
 }
@@ -708,5 +755,15 @@ void Realtime::clearScene() {
     // If you have textures or other resources, delete them here
 
     doneCurrent();
+}
+
+void Realtime::resetGravityCenter() {
+    m_gravityCenter = glm::vec2(0.0f);
+    m_hasGravityCenter = false;
+    m_selectingGravityCenter = false;
+
+    std::cout << "Gravity center reset." << std::endl;
+
+    update();
 }
 
