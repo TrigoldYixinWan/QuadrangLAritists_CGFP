@@ -107,11 +107,11 @@ void Realtime::initializeGL() {
     {
         b2BodyDef groundDef;
         groundDef.position.Set(0.0f, -m_worldHeight / 2.0f - 1.0f);
-        b2Body* groundBody = m_world->CreateBody(&groundDef);
+        m_groundBody = m_world->CreateBody(&groundDef);
 
         b2PolygonShape groundBox;
         groundBox.SetAsBox(m_worldWidth, 1.0f);
-        groundBody->CreateFixture(&groundBox, 0.0f);
+        m_groundBody->CreateFixture(&groundBox, 0.0f);
     }
 
     // Start timer for updates
@@ -446,6 +446,10 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
         m_world->SetGravity(b2Vec2(0.0f, 0.0f));
         std::cout << "Orbit mode activated. Click on the screen to make objects orbit." << std::endl;
         break;
+    case Qt::Key_6:
+        // Initialize and activate the solar system scene
+        initializeSolarSystem();
+        break;
     case Qt::Key_Plus:
         m_currentSize += 0.1f;
         break;
@@ -495,10 +499,15 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
         }
 
         else if (m_selectingOrbitCenter) {
-            m_orbitCenter = glm::vec2(worldX, worldY);
+            m_orbitCenter = glm::vec2(0.f);
             m_orbitMode = true;
             m_selectingOrbitCenter = false;
             m_hasGravityCenter = false;
+            if (m_groundBody) {
+                m_world->DestroyBody(m_groundBody);
+                m_groundBody = nullptr;
+                std::cout << "Ground body destroyed for orbit mode." << std::endl;
+            }
         }
         
         else {
@@ -534,7 +543,6 @@ void Realtime::timerEvent(QTimerEvent *event) {
                     // Normalized direction
                     glm::vec2 norm = dir / dist;
 
-                    // Gravity force = G * mass (you can scale by distance if you want realistic "orbital" gravity)
                     float mass = body->GetMass();
                     glm::vec2 force = norm * (m_gravityStrength * mass);
 
@@ -572,45 +580,42 @@ void Realtime::timerEvent(QTimerEvent *event) {
         m_explosionMode = false;
     }
 
-    if (m_orbitMode) {
-        for (auto &obj : m_objects) {
-            b2Body* body = obj.body;
-            if (body->GetType() == b2_dynamicBody) {
-                b2Vec2 bodyPos = body->GetPosition();
-                glm::vec2 pos(bodyPos.x, bodyPos.y);
-                glm::vec2 diff = pos - m_orbitCenter;
-                float dist = glm::length(diff);
+        if (m_orbitMode) {
+            for (auto &obj : m_objects) {
+                b2Body* body = obj.body;
+                if (body->GetType() == b2_dynamicBody) {
+                    b2Vec2 bodyPos = body->GetPosition();
+                    glm::vec2 pos(bodyPos.x, bodyPos.y);
+                    glm::vec2 diff = pos - m_orbitCenter;
+                    float dist = glm::length(diff);
 
-                // If the body is exactly at the orbit center, skip to avoid division by zero
-                if (dist < 0.0001f) {
-                    continue;
+                    if (dist < 0.0001f) {
+                        continue;
+                    }
+
+                    glm::vec2 radialDir = diff / dist;
+                    glm::vec2 tangentialDir(-radialDir.y, radialDir.x);
+
+                    float angularSpeed = obj.orbitAngularSpeed;
+                    float desiredSpeed = angularSpeed * dist; // v = ω * r
+
+                    b2Vec2 bVel = body->GetLinearVelocity();
+                    glm::vec2 vel(bVel.x, bVel.y);
+
+                    float tangentialComponent = glm::dot(vel, tangentialDir);
+                    float speedError = desiredSpeed - tangentialComponent;
+
+                    float tangentForceGain = 10.0f;
+                    glm::vec2 tangentForce = tangentialDir * speedError * tangentForceGain * body->GetMass();
+                    body->ApplyForceToCenter(b2Vec2(tangentForce.x, tangentForce.y), true);
+
+                    float centripetalForceMagnitude = (desiredSpeed * desiredSpeed / dist) * body->GetMass();
+                    glm::vec2 centripetalForce = -radialDir * centripetalForceMagnitude;
+                    body->ApplyForceToCenter(b2Vec2(centripetalForce.x, centripetalForce.y), true);
                 }
-
-                glm::vec2 radialDir = diff / dist;
-                glm::vec2 tangentialDir(-radialDir.y, radialDir.x);
-
-                float desiredSpeed = m_orbitSpeed * dist; // v = ω * r
-
-                // Current velocity
-                b2Vec2 bVel = body->GetLinearVelocity();
-                glm::vec2 vel(bVel.x, bVel.y);
-
-                // Project current velocity onto tangential direction
-                float tangentialComponent = glm::dot(vel, tangentialDir);
-                float speedError = desiredSpeed - tangentialComponent;
-
-                // Apply tangential force to match desired tangential speed
-                float tangentForceGain = 10.0f;
-                glm::vec2 tangentForce = tangentialDir * speedError * tangentForceGain * body->GetMass();
-                body->ApplyForceToCenter(b2Vec2(tangentForce.x, tangentForce.y), true);
-
-                // Centripetal force = m * v^2 / r
-                float centripetalForceMagnitude = (desiredSpeed * desiredSpeed / dist) * body->GetMass();
-                glm::vec2 centripetalForce = -radialDir * centripetalForceMagnitude;
-                body->ApplyForceToCenter(b2Vec2(centripetalForce.x, centripetalForce.y), true);
             }
         }
-    }
+
 
 
     update(); // request a repaint
@@ -821,8 +826,113 @@ void Realtime::resetGravityCenter() {
     m_selectingOrbitCenter = false;
     m_world->SetGravity(b2Vec2(0.0f, -9.8f));
 
+    if (!m_groundBody) {
+        b2BodyDef groundDef;
+        groundDef.position.Set(0.0f, -m_worldHeight / 2.0f - 1.0f);
+        m_groundBody = m_world->CreateBody(&groundDef);
+
+        b2PolygonShape groundBox;
+        groundBox.SetAsBox(m_worldWidth, 1.0f);
+        m_groundBody->CreateFixture(&groundBox, 0.0f);
+    }
+    
     std::cout << "Gravity center reset." << std::endl;
 
     update();
 }
+
+void Realtime::initializeSolarSystem() {
+    // Clear and destroy existing objects
+    for (auto &obj : m_objects) {
+        m_world->DestroyBody(obj.body);
+    }
+    m_objects.clear();
+
+    if (m_groundBody) {
+        m_world->DestroyBody(m_groundBody);
+        m_groundBody = nullptr;
+    }
+
+    // Set gravity to zero and enable orbit mode
+    m_world->SetGravity(b2Vec2(0.0f, 0.0f));
+    m_orbitCenter = glm::vec2(0.0f, 0.0f);
+    m_orbitMode = true;
+
+    // Create the sun
+    {
+        b2BodyDef sunDef;
+        sunDef.type = b2_staticBody;
+        sunDef.position.Set(0.0f, 0.0f);
+        b2Body* sunBody = m_world->CreateBody(&sunDef);
+
+        b2CircleShape sunShape;
+        sunShape.m_radius = 0.25f;
+        b2FixtureDef fixtureDef;
+        fixtureDef.shape = &sunShape;
+        fixtureDef.density = 0.0f;
+        fixtureDef.friction = 0.0f;
+        sunBody->CreateFixture(&fixtureDef);
+
+        PhysObject sunObj;
+        sunObj.body = sunBody;
+        sunObj.shape = ObjectShape::CIRCLE;
+        sunObj.color = glm::vec3(1.0f, 1.0f, 0.0f);
+        float halfSize = 0.25f;
+
+        const int NUM_SEGMENTS = 24;
+        std::vector<GLfloat> circleVerts;
+        circleVerts.push_back(0.0f);
+        circleVerts.push_back(0.0f);
+        for (int i = 0; i <= NUM_SEGMENTS; i++) {
+            float angle = (float)i / (float)NUM_SEGMENTS * 2.0f * M_PI;
+            float xPos = halfSize * cos(angle);
+            float yPos = halfSize * sin(angle);
+            circleVerts.push_back(xPos);
+            circleVerts.push_back(yPos);
+        }
+
+        glGenVertexArrays(1, &sunObj.VAO);
+        glBindVertexArray(sunObj.VAO);
+
+        glGenBuffers(1, &sunObj.VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, sunObj.VBO);
+        glBufferData(GL_ARRAY_BUFFER, circleVerts.size() * sizeof(GLfloat), circleVerts.data(), GL_STATIC_DRAW);
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glEnableVertexAttribArray(0);
+
+        glBindVertexArray(0);
+        sunObj.isCircle = true;
+        sunObj.size = glm::vec2(halfSize);
+        m_objects.push_back(sunObj);
+    }
+
+    // Assign realistic(ish) angular speeds (in rad/s) to planets:
+    // Example using 1 simulated year = 60 seconds scaling:
+    // Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus
+    std::vector<float> angularSpeeds = {
+        0.4345f,  // Mercury
+        0.1700f,  // Venus
+        0.1047f,  // Earth
+        0.0557f,  // Mars
+        0.00883f, // Jupiter
+        0.00355f, // Saturn
+        0.001247f // Uranus
+    };
+
+    m_currentShape = ObjectShape::CIRCLE;
+    m_currentSize = 0.1f; 
+    float baseRadius = 1.5f;
+    for (int i = 0; i < 7; i++) {
+        float radius = baseRadius + i * 0.5f;
+        createPhysicsObject(radius, 0.0f);
+        if (!m_objects.empty()) {
+            float hue = (float)i / 7.0f;
+            m_objects.back().color = glm::vec3(hue, 0.5f, 1.0f - hue);
+            m_objects.back().orbitAngularSpeed = angularSpeeds[i];
+        }
+    }
+}
+
+
 

@@ -30,6 +30,8 @@ struct PhysObject {
     bool isCircle;
     glm::vec3 color; // Store the object color here
     ObjectShape shape;
+
+    float orbitAngularSpeed = 0.0f;
 };
 
 class Realtime : public QOpenGLWidget {
@@ -149,6 +151,7 @@ private:
     GLuint m_testVBO = 0;
 
 private:
+    b2Body* m_groundBody = nullptr;
     bool m_selectingGravityCenter = false;
     bool m_selectingExplosionCenter = false;
     bool m_hasGravityCenter = false;
@@ -166,5 +169,6 @@ private:
     float m_radiusTolerance = 0.1f; // tolerance for deciding if at orbit radius
 
     void resetGravityCenter();
+    void initializeSolarSystem();
 };
 
