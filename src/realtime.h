@@ -158,6 +158,13 @@ private:
     glm::vec2 m_gravityCenter = glm::vec2(0.0f, 0.0f);
     float m_gravityStrength = 10.0f; // Adjust as needed
 
+    bool m_selectingOrbitCenter = false;
+    bool m_orbitMode = false;
+    glm::vec2 m_orbitCenter = glm::vec2(0.0f);
+    float m_orbitRadius = 2.0f; // choose a radius you like
+    float m_orbitSpeed = 1.0f;  // angular velocity in rad/s
+    float m_radiusTolerance = 0.1f; // tolerance for deciding if at orbit radius
+
     void resetGravityCenter();
 };
 

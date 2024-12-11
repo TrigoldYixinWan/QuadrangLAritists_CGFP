@@ -431,11 +431,20 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
         // Enter mode to select a new gravity center on next left click
         m_selectingGravityCenter = true;
         m_selectingExplosionCenter = false;
+        m_selectingOrbitCenter = false;
         break;
     case Qt::Key_4:
         m_selectingExplosionCenter = true;
         m_selectingGravityCenter = false;
+        m_selectingOrbitCenter = false;
         std::cout << "Explosion mode activated. Click on the screen to apply outward force." << std::endl;
+        break;
+    case Qt::Key_5:
+        m_selectingOrbitCenter = true;
+        m_selectingGravityCenter = false;
+        m_selectingExplosionCenter = false;
+        m_world->SetGravity(b2Vec2(0.0f, 0.0f));
+        std::cout << "Orbit mode activated. Click on the screen to make objects orbit." << std::endl;
         break;
     case Qt::Key_Plus:
         m_currentSize += 0.1f;
@@ -482,6 +491,13 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             m_explosionCenter = glm::vec2(worldX, worldY);
             m_explosionMode = true;
             m_selectingExplosionCenter = false;
+            m_hasGravityCenter = false;
+        }
+
+        else if (m_selectingOrbitCenter) {
+            m_orbitCenter = glm::vec2(worldX, worldY);
+            m_orbitMode = true;
+            m_selectingOrbitCenter = false;
             m_hasGravityCenter = false;
         }
         
@@ -554,6 +570,46 @@ void Realtime::timerEvent(QTimerEvent *event) {
             }
         }
         m_explosionMode = false;
+    }
+
+    if (m_orbitMode) {
+        for (auto &obj : m_objects) {
+            b2Body* body = obj.body;
+            if (body->GetType() == b2_dynamicBody) {
+                b2Vec2 bodyPos = body->GetPosition();
+                glm::vec2 pos(bodyPos.x, bodyPos.y);
+                glm::vec2 diff = pos - m_orbitCenter;
+                float dist = glm::length(diff);
+
+                // If the body is exactly at the orbit center, skip to avoid division by zero
+                if (dist < 0.0001f) {
+                    continue;
+                }
+
+                glm::vec2 radialDir = diff / dist;
+                glm::vec2 tangentialDir(-radialDir.y, radialDir.x);
+
+                float desiredSpeed = m_orbitSpeed * dist; // v = ω * r
+
+                // Current velocity
+                b2Vec2 bVel = body->GetLinearVelocity();
+                glm::vec2 vel(bVel.x, bVel.y);
+
+                // Project current velocity onto tangential direction
+                float tangentialComponent = glm::dot(vel, tangentialDir);
+                float speedError = desiredSpeed - tangentialComponent;
+
+                // Apply tangential force to match desired tangential speed
+                float tangentForceGain = 10.0f;
+                glm::vec2 tangentForce = tangentialDir * speedError * tangentForceGain * body->GetMass();
+                body->ApplyForceToCenter(b2Vec2(tangentForce.x, tangentForce.y), true);
+
+                // Centripetal force = m * v^2 / r
+                float centripetalForceMagnitude = (desiredSpeed * desiredSpeed / dist) * body->GetMass();
+                glm::vec2 centripetalForce = -radialDir * centripetalForceMagnitude;
+                body->ApplyForceToCenter(b2Vec2(centripetalForce.x, centripetalForce.y), true);
+            }
+        }
     }
 
 
@@ -761,6 +817,9 @@ void Realtime::resetGravityCenter() {
     m_gravityCenter = glm::vec2(0.0f);
     m_hasGravityCenter = false;
     m_selectingGravityCenter = false;
+    m_orbitMode = false;
+    m_selectingOrbitCenter = false;
+    m_world->SetGravity(b2Vec2(0.0f, -9.8f));
 
     std::cout << "Gravity center reset." << std::endl;
 
