@@ -106,7 +106,7 @@ void Realtime::initializeGL() {
     // Create ground body
     {
         b2BodyDef groundDef;
-        groundDef.position.Set(0.0f, -m_worldHeight / 2.0f + 1.0f);
+        groundDef.position.Set(0.0f, -m_worldHeight / 2.0f - 1.0f);
         b2Body* groundBody = m_world->CreateBody(&groundDef);
 
         b2PolygonShape groundBox;
@@ -200,11 +200,11 @@ void Realtime::settingsChanged() {
     m_camera.updateProjectionMatrix(width(), height());
 
     // Check if tessellation parameters have changed
-    static int prevParam1 = settings.shapeParameter1;
+    m_explosionStrength = settings.shapeParameter1;
     static int prevParam2 = settings.shapeParameter2;
 
-    if (settings.shapeParameter1 != prevParam1 || settings.shapeParameter2 != prevParam2) {
-        prevParam1 = settings.shapeParameter1;
+    if (settings.shapeParameter1 != m_explosionStrength || settings.shapeParameter2 != prevParam2) {
+        m_explosionStrength = settings.shapeParameter1;
         prevParam2 = settings.shapeParameter2;
 
         // Regenerate shapes with new tessellation parameters
@@ -531,7 +531,7 @@ void Realtime::timerEvent(QTimerEvent *event) {
     if (m_explosionMode) {
         // Apply outward force from the click position
         // glm::vec2 explosionCenter(worldX, worldY);
-        float explosionStrength = 200.0f; // Adjust the strength of the explosion
+        float explosionStrength = m_explosionStrength; // Adjust the strength of the explosion
 
         for (auto &obj : m_objects) {
             b2Body* body = obj.body;

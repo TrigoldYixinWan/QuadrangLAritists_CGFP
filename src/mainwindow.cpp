@@ -37,7 +37,7 @@ void MainWindow::initialize() {
     ec_label->setText("Extra Credit");
     ec_label->setFont(font);
     QLabel *param1_label = new QLabel(); // Parameter 1 label
-    param1_label->setText("Parameter 1:");
+    param1_label->setText("Explosion strength:");
     QLabel *param2_label = new QLabel(); // Parameter 2 label
     param2_label->setText("Parameter 2:");
     QLabel *near_label = new QLabel(); // Near plane label
@@ -72,16 +72,16 @@ void MainWindow::initialize() {
 
     // Create slider controls to control parameters
     p1Slider = new QSlider(Qt::Orientation::Horizontal); // Parameter 1 slider
-    p1Slider->setTickInterval(1);
-    p1Slider->setMinimum(1);
-    p1Slider->setMaximum(25);
-    p1Slider->setValue(1);
+    p1Slider->setTickInterval(5);
+    p1Slider->setMinimum(25);
+    p1Slider->setMaximum(200);
+    p1Slider->setValue(25);
 
     p1Box = new QSpinBox();
-    p1Box->setMinimum(1);
-    p1Box->setMaximum(25);
-    p1Box->setSingleStep(1);
-    p1Box->setValue(1);
+    p1Box->setMinimum(25);
+    p1Box->setMaximum(200);
+    p1Box->setSingleStep(5);
+    p1Box->setValue(25);
 
     p2Slider = new QSlider(Qt::Orientation::Horizontal); // Parameter 2 slider
     p2Slider->setTickInterval(1);
@@ -186,7 +186,7 @@ void MainWindow::initialize() {
     connectUIElements();
 
     // Set default values of 5 for tesselation parameters
-    onValChangeP1(5);
+    onValChangeP1(25);
     onValChangeP2(5);
 
     // Set default values for near and far planes
