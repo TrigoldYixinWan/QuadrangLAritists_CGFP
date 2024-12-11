@@ -47,7 +47,20 @@ add_executable(${PROJECT_NAME}
 
 # GLM: this creates its library and allows you to #include "glm/..."
 add_subdirectory(glm)
+include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+)
 
+# Update your target_link_libraries
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    Qt::Core
+    Qt::Gui
+    Qt::OpenGL
+    Qt::OpenGLWidgets
+    Qt::Xml
+    StaticGLEW
+    ${CMAKE_SOURCE_DIR}/lib/libliquidfun.a
+)
 # GLEW: this creates its library and allows you to #include "GL/glew.h"
 add_library(StaticGLEW STATIC glew/src/glew.c
     src/utils/cone.h src/utils/cone.cpp)

@@ -15,13 +15,15 @@
 #include "utils/sceneparser.h"
 
 #include <Box2D/Box2D.h>
+#include <Box2D/Particle/b2ParticleSystem.h>
 
 // A structure for physical objects integrated with OpenGL rendering
 enum class ObjectShape {
     BOX,
-    CIRCLE
+    CIRCLE,
+    WATER
+    // ... other shapes if any
 };
-
 struct PhysObject {
     b2Body* body;
     GLuint VAO;
@@ -170,5 +172,19 @@ private:
 
     void resetGravityCenter();
     void initializeSolarSystem();
+
+    b2ParticleSystem* m_particleSystem;
+    b2ParticleSystemDef m_particleSystemDef;
+    float m_particleRadius = 0.1f;
+    const float m_waterDensity = 1.0f;
+    void renderWaterParticles();
+    void createWaterParticles(float x, float y, int count = 20);
+    void drawCircle(float radius);
+
+
+    // For rendering particles
+    GLuint m_particleVAO = 0;
+    GLuint m_particleVBO = 0;
+    bool m_particleVAOInitialized = false;
 };
 

@@ -1,9 +1,5 @@
 #include "realtime.h"
 #include "glm/gtc/type_ptr.hpp"
-#include "utils/cube.h"
-#include "utils/sphere.h"
-#include "utils/cone.h"
-#include "utils/cylinder.h"
 
 #include "utils/shaderloader.h"
 #include <QCoreApplication>
@@ -101,6 +97,7 @@ void Realtime::initializeGL() {
 
     // Create Box2D world with gravity
     b2Vec2 gravity(0.0f, -9.8f);
+
     m_world = new b2World(gravity);
 
     // Create ground body
@@ -113,8 +110,14 @@ void Realtime::initializeGL() {
         groundBox.SetAsBox(m_worldWidth, 1.0f);
         m_groundBody->CreateFixture(&groundBox, 0.0f);
     }
-
-    // Start timer for updates
+    {
+        b2ParticleSystemDef particleSystemDef;
+        particleSystemDef.radius = 0.05f; // Adjust for desired density
+        particleSystemDef.dampingStrength = 0.2f;
+        m_particleSystem = m_world->CreateParticleSystem(&particleSystemDef);
+        m_particleSystem->SetGravityScale(1.0f);
+        m_particleSystem->SetMaxParticleCount(5000); // Limit particle count
+    }
     m_timer = startTimer(16); // ~60FPS
 }
 void Realtime::setup2DProjection(int w, int h) {
@@ -141,8 +144,75 @@ void Realtime::paintGL() {
 
     GLint colorLoc = glGetUniformLocation(m_shaderProgram2D, "u_Color");
     GLint modelLoc = glGetUniformLocation(m_shaderProgram2D, "u_Model");
+    GLint planetTypeLoc = glGetUniformLocation(m_shaderProgram2D, "u_PlanetType");
+    GLint lightPosLoc = glGetUniformLocation(m_shaderProgram2D, "u_LightPos");
+    GLint timeLoc = glGetUniformLocation(m_shaderProgram2D, "u_Time");
 
+    // Set light position (sun position, which is 0,0)
+    glUniform2f(lightPosLoc, 0.0f, 0.0f);
+
+    // Set time (use elapsed time since start)
+    float currentTime = m_elapsedTimer.elapsed() / 1000.0f;
+    glUniform1f(timeLoc, currentTime);
+
+    int32 particleCount = m_particleSystem->GetParticleCount();
+    if (particleCount > 0) {
+        const b2Vec2* positions = m_particleSystem->GetPositionBuffer();
+
+        // Initialize VAO/VBO once
+        if (!m_particleVAOInitialized) {
+            glGenVertexArrays(1, &m_particleVAO);
+            glBindVertexArray(m_particleVAO);
+
+            glGenBuffers(1, &m_particleVBO);
+            glBindBuffer(GL_ARRAY_BUFFER, m_particleVBO);
+
+            // Setup position attribute
+            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+            glEnableVertexAttribArray(0);
+
+            // Setup texCoord attribute with default values
+            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+            glEnableVertexAttribArray(1);
+
+            glBindVertexArray(0);
+            m_particleVAOInitialized = true;
+        }
+
+        // Create a buffer that includes both position and default texture coordinates
+        std::vector<float> vertexData;
+        vertexData.reserve(particleCount * 4); // 4 floats per particle (2 for pos, 2 for texCoord)
+        for (int i = 0; i < particleCount; i++) {
+            // Position
+            vertexData.push_back(positions[i].x);
+            vertexData.push_back(positions[i].y);
+            // Default texture coordinates
+            vertexData.push_back(0.0f);
+            vertexData.push_back(0.0f);
+        }
+
+        // Update particle positions into VBO
+        glBindBuffer(GL_ARRAY_BUFFER, m_particleVBO);
+        glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float), vertexData.data(), GL_DYNAMIC_DRAW);
+
+        // Set uniforms and draw
+        glm::mat4 particleModel = glm::mat4(1.0f);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(particleModel));
+        glUniform3f(colorLoc, 0.0f, 0.0f, 1.0f);  // Blue color for water
+
+        glBindVertexArray(m_particleVAO);
+        glPointSize(5.0f);
+        glUniform1i(planetTypeLoc, 99); // or some value that corresponds to no masking
+
+        glDrawArrays(GL_POINTS, 0, particleCount);
+        glBindVertexArray(0);
+    }
     for (auto &obj : m_objects) {
+        int planetType = 0; // Sun
+        if (&obj != &m_objects.front()) { // If not the sun
+            planetType = ((&obj - &m_objects.front()) % 2) + 1; // Alternate between rocky and gas giants
+        }
+        glUniform1i(planetTypeLoc, planetType);
         b2Vec2 pos = obj.body->GetPosition();
         float angle = obj.body->GetAngle();
 
@@ -166,7 +236,9 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
 
+
     glUseProgram(0);
+
 }
 void Realtime::resizeGL(int w, int h) {
     setup2DProjection(w, h);
@@ -193,6 +265,9 @@ void Realtime::sceneChanged() {
     update(); // Request a repaint
 }
 
+
+
+
 void Realtime::settingsChanged() {
     // Update near and far plane distances
     m_camera.nearPlane = settings.nearPlane;
@@ -216,80 +291,7 @@ void Realtime::settingsChanged() {
     update(); // Request a repaint
 }
 
-void Realtime::renderScene() {
-    // Use the shader program
-    glUseProgram(m_shaderProgram);
 
-    // Get uniform locations
-    GLint modelLoc = glGetUniformLocation(m_shaderProgram, "model");
-    GLint viewLoc = glGetUniformLocation(m_shaderProgram, "view");
-    GLint projLoc = glGetUniformLocation(m_shaderProgram, "proj");
-    GLint cameraPosLoc = glGetUniformLocation(m_shaderProgram, "cameraPos");
-    GLint numLightsLoc = glGetUniformLocation(m_shaderProgram, "numLights");
-
-    // Material uniforms
-    GLint materialAmbientLoc  = glGetUniformLocation(m_shaderProgram, "material.ambient");
-    GLint materialDiffuseLoc  = glGetUniformLocation(m_shaderProgram, "material.diffuse");
-    GLint materialSpecularLoc = glGetUniformLocation(m_shaderProgram, "material.specular");
-    GLint materialShininessLoc = glGetUniformLocation(m_shaderProgram, "material.shininess");
-
-
-    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(m_camera.viewMatrix));
-    glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(m_camera.projectionMatrix));
-
-    // Set camera position
-    glUniform3fv(cameraPosLoc, 1, glm::value_ptr(m_camera.position));
-
-    // Set number of lights
-    glUniform1i(numLightsLoc, lights.size());
-
-    // For each light, set its properties
-    for (int i = 0; i < lights.size(); ++i) {
-        Light &light = lights[i];
-        std::string baseName = "lights[" + std::to_string(i) + "]";
-
-        GLint typeLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".type").c_str());
-        GLint posLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".position").c_str());
-        GLint dirLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".direction").c_str());
-        GLint colorLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".color").c_str());
-        GLint angleLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".angle").c_str());
-        GLint penumbraLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".penumbra").c_str());
-        GLint attenuationLoc = glGetUniformLocation(m_shaderProgram, (baseName + ".attenuation").c_str());
-
-        glUniform1i(typeLoc, light.type);
-        glUniform3fv(posLoc, 1, glm::value_ptr(light.position));
-        glUniform3fv(dirLoc, 1, glm::value_ptr(light.direction));
-        glUniform3fv(colorLoc, 1, glm::value_ptr(light.color));
-        glUniform1f(angleLoc, light.angle);
-        glUniform1f(penumbraLoc, light.penumbra);
-        glUniform3fv(attenuationLoc, 1, glm::value_ptr(light.attenuation));
-    }
-    // Render each shape
-    for (const auto& shapeData : m_renderData.shapes) {
-        // Set model matrix for the shape
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(shapeData.ctm));
-
-        // Set material properties per shape
-        glUniform3fv(materialAmbientLoc, 1, glm::value_ptr(shapeData.primitive.material.cAmbient*m_renderData.globalData.ka));
-        glUniform3fv(materialDiffuseLoc, 1, glm::value_ptr(shapeData.primitive.material.cDiffuse*m_renderData.globalData.kd));
-        glUniform3fv(materialSpecularLoc, 1, glm::value_ptr(shapeData.primitive.material.cSpecular*m_renderData.globalData.ks));
-        glUniform1f(materialShininessLoc, shapeData.primitive.material.shininess);
-
-        // Bind VAO and draw the shape
-        glBindVertexArray(shapeData.VAO);
-
-        if (shapeData.hasIndices) {
-            glDrawElements(GL_TRIANGLES, shapeData.indexCount, GL_UNSIGNED_INT, 0);
-        } else {
-            glDrawArrays(GL_TRIANGLES, 0, shapeData.vertexCount);
-        }
-
-        glBindVertexArray(0);
-    }
-
-    // Unbind the shader program
-    glUseProgram(0);
-}
 
 void Realtime::paintTexture(GLuint texture, int filterType)
 {
@@ -361,6 +363,12 @@ void Realtime::createPhysicsObject(float x, float y) {
             -halfSize,  halfSize
         };
 
+
+        // Update vertex attribute pointers:
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
         glGenVertexArrays(1, &obj.VAO);
         glBindVertexArray(obj.VAO);
 
@@ -419,7 +427,9 @@ void Realtime::createPhysicsObject(float x, float y) {
 }
 // ================== Project 6: Action!
 void Realtime::keyPressEvent(QKeyEvent *event) {
+
     m_keyMap[Qt::Key(event->key())] = true;
+
     switch(event->key()) {
     case Qt::Key_1:
         m_currentShape = ObjectShape::BOX;
@@ -468,6 +478,9 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     case Qt::Key_Escape:
         resetGravityCenter();
         break;
+    case Qt::Key_W:
+        m_currentShape = ObjectShape::WATER;
+        break;
     default:
         break;
     }
@@ -508,6 +521,18 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
                 m_groundBody = nullptr;
                 std::cout << "Ground body destroyed for orbit mode." << std::endl;
             }
+        }else if (m_currentShape == ObjectShape::WATER) {
+            makeCurrent();
+            // Define a box of particles at clicked position
+            b2PolygonShape particleBox;
+            float halfSize = 0.5f;
+            particleBox.SetAsBox(halfSize, halfSize, b2Vec2(worldX, worldY), 0);
+
+            b2ParticleGroupDef groupDef;
+            groupDef.shape = &particleBox;
+            groupDef.flags = b2_waterParticle; // Water-like particles
+            groupDef.color.Set(0, 0, 155, 255); // Blue color (only if rendering particle color)
+            m_particleSystem->CreateParticleGroup(groupDef);
         }
         
         else {
