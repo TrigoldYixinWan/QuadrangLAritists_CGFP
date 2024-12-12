@@ -572,7 +572,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
         float worldX = (xRatio - 0.5f) * m_worldWidth;
         float worldY = (0.5f - yRatio) * m_worldHeight;
 
-        if (m_selectingGravityCenter) {
+        if (settings.perPixelFilter) {
             // Set new gravity center
             m_gravityCenter = glm::vec2(worldX, worldY);
             m_hasGravityCenter = true;
@@ -592,7 +592,7 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             m_currentBrush = m_world->CreateBody(&bodyDef);
         }
 
-        else if (m_selectingExplosionCenter) {
+        else if (settings.extraCredit2) {
             m_explosionCenter = glm::vec2(worldX, worldY);
             m_explosionMode = true;
             m_selectingExplosionCenter = false;
@@ -716,7 +716,7 @@ void Realtime::timerEvent(QTimerEvent *event) {
                     glm::vec2 tangentialDir(-radialDir.y, radialDir.x);
 
                     float angularSpeed = obj.orbitAngularSpeed;
-                    float desiredSpeed = angularSpeed * dist; // v = ω * r
+                    float desiredSpeed = (0.8+settings.shapeParameter2/5)*angularSpeed * dist; // v = ω * r
 
                     b2Vec2 bVel = body->GetLinearVelocity();
                     glm::vec2 vel(bVel.x, bVel.y);

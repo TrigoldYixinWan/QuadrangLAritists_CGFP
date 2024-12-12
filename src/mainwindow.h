@@ -1,11 +1,11 @@
 #pragma once
 
-#include <QMainWindow>
 #include <QCheckBox>
+#include <QDoubleSpinBox>
+#include <QMainWindow>
+#include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
-#include <QDoubleSpinBox>
-#include <QPushButton>
 #include "realtime.h"
 #include "utils/aspectratiowidget/aspectratiowidget.hpp"
 
@@ -21,8 +21,6 @@ private:
     void connectUIElements();
     void connectParam1();
     void connectParam2();
-    void connectNear();
-    void connectFar();
     void connectPerPixelFilter();
     void connectKernelBasedFilter();
     void connectUploadFile();
@@ -33,16 +31,14 @@ private:
     AspectRatioWidget *aspectRatioWidget;
     QCheckBox *filter1;
     QCheckBox *filter2;
+    QCheckBox *filter3;
     QPushButton *uploadFile;
     QPushButton *saveImage;
     QSlider *p1Slider;
     QSlider *p2Slider;
     QSpinBox *p1Box;
     QSpinBox *p2Box;
-    QSlider *nearSlider;
-    QSlider *farSlider;
-    QDoubleSpinBox *nearBox;
-    QDoubleSpinBox *farBox;
+
 
     // Extra Credit:
     QCheckBox *ec1;
@@ -57,10 +53,7 @@ private slots:
     void onSaveImage();
     void onValChangeP1(int newValue);
     void onValChangeP2(int newValue);
-    void onValChangeNearSlider(int newValue);
-    void onValChangeFarSlider(int newValue);
-    void onValChangeNearBox(double newValue);
-    void onValChangeFarBox(double newValue);
+
 
     // Extra Credit:
     void onExtraCredit1();
