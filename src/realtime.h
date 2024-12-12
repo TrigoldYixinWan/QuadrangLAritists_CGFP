@@ -34,6 +34,8 @@ struct PhysObject {
     ObjectShape shape;
     bool canBecomeStatic = false;
     float orbitAngularSpeed = 0.0f;
+    GLuint textureID = 0;
+    bool hasTexture = false;
 };
 
 class Realtime : public QOpenGLWidget {

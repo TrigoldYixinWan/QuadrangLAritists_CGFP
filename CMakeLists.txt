@@ -79,6 +79,14 @@ qt6_add_resources(${PROJECT_NAME} "Resources"
         resources/shaders/post_processing.frag
         resources/shaders/2D.frag
         resources/shaders/2D.vert
+        resources/planetText/test.png
+        resources/planetText/earth.png
+        resources/planetText/jupiter.png
+        resources/planetText/mars.png
+        resources/planetText/neptune.png
+        resources/planetText/saturn.png
+        resources/planetText/uranus.png
+        resources/planetText/venus.png
 )
 
 # GLEW: this provides support for Windows (including 64-bit)

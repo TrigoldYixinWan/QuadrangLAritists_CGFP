@@ -11,6 +11,15 @@
 #include <Box2D/Box2D.h>
 
 // ================== Project 5: Lights, Camera
+QString texturePaths[7] = {
+    ":/resources/planetText/venus.png",
+    ":/resources/planetText/earth.png",
+    ":/resources/planetText/mars.png",
+    ":/resources/planetText/jupiter.png",
+    ":/resources/planetText/saturn.png",
+    ":/resources/planetText/uranus.png",
+    ":/resources/planetText/neptune.png"
+};
 
 Realtime::Realtime(QWidget *parent)
     : QOpenGLWidget(parent)
@@ -148,6 +157,9 @@ void Realtime::paintGL() {
     GLint lightPosLoc = glGetUniformLocation(m_shaderProgram2D, "u_LightPos");
     GLint timeLoc = glGetUniformLocation(m_shaderProgram2D, "u_Time");
 
+    GLint useTextureLoc = glGetUniformLocation(m_shaderProgram2D, "u_UseTexture");
+    GLint textureLoc = glGetUniformLocation(m_shaderProgram2D, "u_Texture");
+
     // Set light position (sun position, which is 0,0)
     glUniform2f(lightPosLoc, 0.0f, 0.0f);
 
@@ -208,11 +220,6 @@ void Realtime::paintGL() {
         glBindVertexArray(0);
     }
     for (auto &obj : m_objects) {
-        int planetType = 0; // Sun
-        if (&obj != &m_objects.front()) { // If not the sun
-            planetType = ((&obj - &m_objects.front()) % 2) + 1; // Alternate between rocky and gas giants
-        }
-        glUniform1i(planetTypeLoc, planetType);
         b2Vec2 pos = obj.body->GetPosition();
         float angle = obj.body->GetAngle();
 
@@ -220,8 +227,18 @@ void Realtime::paintGL() {
         model = glm::rotate(model, angle, glm::vec3(0.f, 0.f, 1.f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        // Set the object's color
-        glUniform3fv(colorLoc, 1, glm::value_ptr(obj.color));
+        if (obj.hasTexture && obj.textureID != 0) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, obj.textureID);
+            glUniform1i(textureLoc, 0);
+            glUniform1i(useTextureLoc, 1);
+        } else {
+            glUniform3fv(colorLoc, 1, glm::value_ptr(obj.color));
+            glUniform1i(useTextureLoc, 0);
+        }
+
+        // // Set the object's color
+        // glUniform3fv(colorLoc, 1, glm::value_ptr(obj.color));
 
         glBindVertexArray(obj.VAO);
         if (obj.isCircle) {
@@ -309,7 +326,6 @@ void Realtime::createPhysicsObject(float x, float y) {
     obj.body = body;
     obj.shape = m_currentShape;
     obj.color = m_currentColor;
-    obj.canBecomeStatic = m_autoStaticMode; // Important line
     float halfSize = m_currentSize;
 
     if (obj.shape == ObjectShape::BOX) {
@@ -335,12 +351,6 @@ void Realtime::createPhysicsObject(float x, float y) {
             -halfSize,  halfSize
         };
 
-
-        // Update vertex attribute pointers:
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
         glGenVertexArrays(1, &obj.VAO);
         glBindVertexArray(obj.VAO);
 
@@ -366,17 +376,26 @@ void Realtime::createPhysicsObject(float x, float y) {
         fixtureDef.friction = 0.3f;
         body->CreateFixture(&fixtureDef);
 
-        const int NUM_SEGMENTS = 25;
+        const int NUM_SEGMENTS = 24;
         std::vector<GLfloat> circleVerts;
-        circleVerts.push_back(0.0f);
-        circleVerts.push_back(0.0f);
+
+        // Center vertex with texture coordinates
+        circleVerts.push_back(0.0f);  // x
+        circleVerts.push_back(0.0f);  // y
+        circleVerts.push_back(0.5f);  // s
+        circleVerts.push_back(0.5f);  // t
 
         for (int i = 0; i <= NUM_SEGMENTS; i++) {
             float angle = (float)i / (float)NUM_SEGMENTS * 2.0f * M_PI;
             float xPos = halfSize * cos(angle);
             float yPos = halfSize * sin(angle);
-            circleVerts.push_back(xPos);
-            circleVerts.push_back(yPos);
+            float s = 0.5f + (cos(angle) * 0.5f);  // Map to [0,1] range
+            float t = 0.5f + (sin(angle) * 0.5f);  // Map to [0,1] range
+
+            circleVerts.push_back(xPos);  // x
+            circleVerts.push_back(yPos);  // y
+            circleVerts.push_back(s);     // s
+            circleVerts.push_back(t);     // t
         }
 
         glGenVertexArrays(1, &obj.VAO);
@@ -386,8 +405,13 @@ void Realtime::createPhysicsObject(float x, float y) {
         glBindBuffer(GL_ARRAY_BUFFER, obj.VBO);
         glBufferData(GL_ARRAY_BUFFER, circleVerts.size() * sizeof(GLfloat), circleVerts.data(), GL_STATIC_DRAW);
 
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        // Position attribute (2 floats)
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void*)0);
         glEnableVertexAttribArray(0);
+
+        // Texture coordinate attribute (2 floats)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void*)(2 * sizeof(GLfloat)));
+        glEnableVertexAttribArray(1);
 
         glBindVertexArray(0);
     }
@@ -397,6 +421,7 @@ void Realtime::createPhysicsObject(float x, float y) {
     // After finishing creation, you can let paintGL handle the rest.
     // No need to call doneCurrent() here, as QOpenGLWidget will handle context switching appropriately.
 }
+
 // ================== Project 6: Action!
 void Realtime::keyPressEvent(QKeyEvent *event) {
 
@@ -464,6 +489,27 @@ void Realtime::keyPressEvent(QKeyEvent *event) {
     default:
         break;
     }
+}
+GLuint loadTexture(const QString &filePath) {
+    QImage img;
+    if(!img.load(filePath)) {
+        std::cerr << "Failed to load texture: " << filePath.toStdString() << std::endl;
+        return 0;
+    }
+    img = img.convertToFormat(QImage::Format_RGBA8888);
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width(), img.height(),
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, img.constBits());
+
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texID;
 }
 void Realtime::resetWorld() {
     // Delete all Box2D bodies and reset vectors
@@ -913,6 +959,16 @@ void Realtime::initializeSolarSystem() {
         glBindVertexArray(0);
         sunObj.isCircle = true;
         sunObj.size = glm::vec2(halfSize);
+
+        QString sunTexturePath = ":/resources/planetText/test.png";
+        GLuint sunTexID = loadTexture(sunTexturePath);
+        if (sunTexID != 0) {
+            sunObj.textureID = sunTexID;
+            sunObj.hasTexture = true;
+        } else {
+            sunObj.hasTexture = false;
+        }
+
         m_objects.push_back(sunObj);
     }
 
@@ -930,7 +986,7 @@ void Realtime::initializeSolarSystem() {
     };
 
     m_currentShape = ObjectShape::CIRCLE;
-    m_currentSize = 0.1f; 
+    m_currentSize = 0.1f;
     float baseRadius = 1.5f;
     for (int i = 0; i < 7; i++) {
         float radius = baseRadius + i * 0.5f;
@@ -939,9 +995,18 @@ void Realtime::initializeSolarSystem() {
             float hue = (float)i / 7.0f;
             m_objects.back().color = glm::vec3(hue, 0.5f, 1.0f - hue);
             m_objects.back().orbitAngularSpeed = angularSpeeds[i];
+
+            GLuint texID = loadTexture(texturePaths[i]);
+            if (texID != 0) {
+                m_objects.back().textureID = texID;
+                m_objects.back().hasTexture = true;
+            } else {
+                m_objects.back().hasTexture = false;
+            }
         }
     }
 }
+
 
 void Realtime::renderBrushStrokes() {
     glUseProgram(m_shaderProgram2D);
@@ -1018,5 +1083,54 @@ void Realtime::renderBrushStrokes() {
 
     glUseProgram(0);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
