@@ -17,7 +17,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui OpenGL OpenGLWidgets Xml)
 
 # Find Box2D installed via vcpkg
-find_package(box2d CONFIG REQUIRED)
+
 
 # Allows you to include files from within those directories, without prefixing their filepaths
 include_directories(src)
@@ -67,15 +67,7 @@ add_library(StaticGLEW STATIC glew/src/glew.c
 include_directories(${PROJECT_NAME} PRIVATE glew/include)
 
 # Specifies libraries to be linked (Qt components, glew, Box2D, etc)
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Qt::Core
-    Qt::Gui
-    Qt::OpenGL
-    Qt::OpenGLWidgets
-    Qt::Xml
-    StaticGLEW
-    box2d::box2d  # Link Box2D here
-)
+
 
 # Specifies other files
 qt6_add_resources(${PROJECT_NAME} "Resources"

@@ -474,15 +474,25 @@ void Realtime::resetWorld() {
 
     // Clear all particles
     if (m_particleSystem) {
-        m_particleSystem->DestroyParticle(0,false);  // false = don't call destructor, 0 = destroy all particles
+        m_particleSystem->DestroyParticle(0, false);
     }
 
-    // Reset brush strokes
-    if (m_currentBrush) {
-        m_world->DestroyBody(m_currentBrush);
-        m_currentBrush = nullptr;
+    // Clear all brush strokes (both visual and physical)
+    m_allBrushStrokes.clear();
+    m_currentStroke.clear();
+
+    // Destroy all brush bodies
+    b2Body* body = m_world->GetBodyList();
+    while (body) {
+        b2Body* nextBody = body->GetNext(); // Get next before destroying current
+        if (body != m_groundBody) { // Don't destroy ground yet
+            m_world->DestroyBody(body);
+        }
+        body = nextBody;
     }
-    m_brushPoints.clear();
+
+    // Reset current brush pointer
+    m_currentBrush = nullptr;
 
     // Reset gravity and modes
     m_world->SetGravity(b2Vec2(0.0f, -9.8f));
@@ -521,13 +531,14 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
             m_gravityCenter = glm::vec2(worldX, worldY);
             m_hasGravityCenter = true;
             m_selectingGravityCenter = false;
-        } else if(m_brushMode){
+        }if (m_brushMode) {
             float x = ((float)event->pos().x() / width() - 0.5f) * m_worldWidth;
             float y = (0.5f - (float)event->pos().y() / height()) * m_worldHeight;
-            m_mouseup = false;
-            // Start new brush stroke
 
-            m_brushPoints.push_back(b2Vec2(x, y));
+            // Start new stroke
+            m_currentStroke.clear();
+            m_currentStroke.push_back(b2Vec2(x, y));
+            m_mouseDown = true;
 
             // Create static body for the brush stroke
             b2BodyDef bodyDef;
@@ -576,9 +587,12 @@ void Realtime::mousePressEvent(QMouseEvent *event) {
 void Realtime::mouseReleaseEvent(QMouseEvent *event) {
     if (!m_brushMode) return;
 
-    // Finish brush stroke
+    // Save completed stroke
+    if (!m_currentStroke.empty()) {
+        m_allBrushStrokes.push_back(m_currentStroke);
+    }
     m_currentBrush = nullptr;
-    m_mouseup = true;
+    m_mouseDown = false;
 
 }
 
@@ -681,28 +695,26 @@ void Realtime::timerEvent(QTimerEvent *event) {
 }
 
 void Realtime::mouseMoveEvent(QMouseEvent *event) {
-    if (!m_brushMode || !m_currentBrush) return;
+    if (!m_brushMode || !m_currentBrush || !m_mouseDown) return;
 
-    // Convert coordinates
     float x = ((float)event->pos().x() / width() - 0.5f) * m_worldWidth;
     float y = (0.5f - (float)event->pos().y() / height()) * m_worldHeight;
 
-    // Add point if it's far enough from last point
     b2Vec2 newPoint(x, y);
-    if (m_brushPoints.size() > 0) {
-        b2Vec2 lastPoint = m_brushPoints.back();
+    if (!m_currentStroke.empty()) {
+        b2Vec2 lastPoint = m_currentStroke.back();
         float dist = b2Distance(newPoint, lastPoint);
-        if (dist < m_brushThickness) return;  // Skip if points too close
+        if (dist < m_brushThickness) return;
     }
 
-    m_brushPoints.push_back(newPoint);
+    m_currentStroke.push_back(newPoint);
 
     // Create edge shape between last two points
-    if (m_brushPoints.size() >= 2 ) {
-        size_t last = m_brushPoints.size() - 1;
+    if (m_currentStroke.size() >= 2 ) {
+        size_t last = m_currentStroke.size() - 1;
 
         b2EdgeShape edge;
-        edge.Set(m_brushPoints[last-1], m_brushPoints[last]);
+        edge.Set(m_currentStroke[last-1], m_currentStroke[last]);
 
         b2FixtureDef fixtureDef;
         fixtureDef.shape = &edge;
@@ -940,22 +952,48 @@ void Realtime::renderBrushStrokes() {
     GLint projLoc = glGetUniformLocation(m_shaderProgram2D, "u_Projection");
     glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(proj));
 
-    // Render the current brush stroke
-    if (m_brushPoints.size() >= 2) {
-        glLineWidth(5.0f);  // Make lines thicker and visible
+    GLint colorLoc = glGetUniformLocation(m_shaderProgram2D, "u_Color");
+    GLint modelLoc = glGetUniformLocation(m_shaderProgram2D, "u_Model");
 
-        GLint colorLoc = glGetUniformLocation(m_shaderProgram2D, "u_Color");
-        GLint modelLoc = glGetUniformLocation(m_shaderProgram2D, "u_Model");
+    // Set color and model matrix
+    glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);  // White color
+    glm::mat4 model = glm::mat4(1.0f);
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-        // Set color (e.g., white)
-        glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
+    glLineWidth(10.f);  // Make lines thicker and visible
 
-        // Identity model matrix
-        glm::mat4 model = glm::mat4(1.0f);
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+    // Render all completed strokes
+    for (const auto& stroke : m_allBrushStrokes) {
+        if (stroke.size() >= 2) {
+            std::vector<float> vertices;
+            for (const auto& point : stroke) {
+                vertices.push_back(point.x);
+                vertices.push_back(point.y);
+            }
 
+            GLuint vbo, vao;
+            glGenVertexArrays(1, &vao);
+            glGenBuffers(1, &vbo);
+
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float),
+                         vertices.data(), GL_STATIC_DRAW);
+
+            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+            glEnableVertexAttribArray(0);
+
+            glDrawArrays(GL_LINE_STRIP, 0, vertices.size()/2);
+
+            glDeleteBuffers(1, &vbo);
+            glDeleteVertexArrays(1, &vao);
+        }
+    }
+
+    // Render current stroke if it exists
+    if (m_currentStroke.size() >= 2) {
         std::vector<float> vertices;
-        for (const auto& point : m_brushPoints) {
+        for (const auto& point : m_currentStroke) {
             vertices.push_back(point.x);
             vertices.push_back(point.y);
         }

@@ -189,12 +189,13 @@ private:
     std::vector<b2Vec2> m_drawPoints;
 
     bool m_brushMode = false;
-    std::vector<b2Vec2> m_brushPoints;
     b2Body* m_currentBrush = nullptr;
     float m_brushThickness = 0.1f;
     void renderBrushStrokes();
     void resetWorld();
 
-    bool m_mouseup = true;
+    bool m_justFinishStroke = false;
+    std::vector<b2Vec2> m_currentStroke;
+    std::vector<std::vector<b2Vec2>> m_allBrushStrokes;
 };
 
