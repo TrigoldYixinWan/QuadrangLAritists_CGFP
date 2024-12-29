@@ -81,7 +81,7 @@ void Realtime::initializeGL() {
     glDisable(GL_DEPTH_TEST); // Not necessary in 2D
     glDisable(GL_CULL_FACE);  // Usually unnecessary for 2D
 
-    glClearColor(0.5f, 0.5f, 0.5f, 1.f);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.f);
 
     // Setup a simple orthographic projection
     // For example, we can set the world coordinate system to something like:
